@@ -72,7 +72,7 @@ public class LoginToExpenseApp {
 
     public String setUsername(String username) {
         String url = requestParameters.getUrl() + BuildVars.REST_URL + "/username";
-        HttpEntity body = new StringEntity(SerializationToJSON.serializeUsername(username),
+        HttpEntity body = new StringEntity(SerializationToJSON.serializeOneParam(username),
                 ContentType.APPLICATION_JSON);
         return sendPostRequest(url, body, requestParameters.getAccessToken());
     }
