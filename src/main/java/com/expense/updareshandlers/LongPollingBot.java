@@ -9,7 +9,7 @@ public class LongPollingBot extends TelegramLongPollingBot {
     private UpdateHandler updateHandler = new UpdateHandler(this);
 
     public void onUpdateReceived(Update update) {
-        updateHandler.handleMessage(update.getMessage());
+        updateHandler.handleUpdate(update);
     }
 
     public String getBotUsername() {

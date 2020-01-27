@@ -1,12 +1,18 @@
 package com.expense.updareshandlers;
 
+import com.expense.BotConfig;
+import com.expense.inlinekeyboard.InlineKeyboardFactory;
 import com.expense.salesforceconection.*;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.FormatStyle;
 
 import static com.expense.inlinekeyboard.InlineKeyboardFactory.*;
 
@@ -17,16 +23,18 @@ public class ChatUpdateHandler {
     private LoginToExpenseApp loginToExpenseApp;
     private CalloutsToSalesforce calloutsToSalesforce;
     private LongPollingBot bot;
-    private Message message;
+    private Long chatId;
     private boolean isActive = false;
+    private LocalDate monthToRenderCalendar;
 
-    public ChatUpdateHandler(LongPollingBot bot) {
+    public ChatUpdateHandler(LongPollingBot bot, Long chatId) {
         this.bot = bot;
+        this.chatId = chatId;
+        this.monthToRenderCalendar = LocalDate.now();
     }
 
-    public void commandHandler(Message message) {
-        this.message = message;
-        switch (message.getText()) {
+    public void commandHandler(String text, Integer messageId) {
+        switch (text) {
             case Commands.START:
                 startHandler();
                 break;
@@ -60,11 +68,19 @@ public class ChatUpdateHandler {
             case Commands.TODAY:
                 todayHandler();
                 break;
+            case Commands.PREV_MONTH:
+                prevMonthHandler(messageId);
+                break;
+            case Commands.NEXT_MONTH:
+                nextMonthHandler(messageId);
+                break;
+            case Commands.DO_NOTHING:
+                break;
 //            case Commands.HELP:
 //                helpHandler();
 //                break;
             default:
-                textHandler();
+                textHandler(text);
                 break;
         }
     }
@@ -82,12 +98,20 @@ public class ChatUpdateHandler {
     }
 
     private void cancelHandler() {
-        Long chatId = message.getChatId();
         if (checkActive()) {
             // bot is active (command /start was executed)
             if (checkAuth()) {
                 // user is logged
-                // TODO at the end? when I will know all cases
+                if (checkNewCardProcess()){
+                    // user is in process of creating new expense card
+                    if (calloutsToSalesforce.getNewCardStage() == null){
+                        calloutsToSalesforce.closeNewCardProcess();
+                        sendMsg("Что хотіте сделать?", getBaseCommands());
+                    } else {
+                        calloutsToSalesforce.setNewCardStage(null);
+                        checkIfReadyToSave();
+                    }
+                }
             }
         }
     }
@@ -184,7 +208,7 @@ public class ChatUpdateHandler {
         }
     }
 
-    private void createCardHandler(){
+    private void createCardHandler() {
         if (checkActive()) {
             // bot is active (command /start was executed)
             if (checkAuth()) {
@@ -196,7 +220,8 @@ public class ChatUpdateHandler {
                     LocalDate cardDate = calloutsToSalesforce.getCardDate();
                     if (checkData(amount, description, cardDate)) {
                         String result = calloutsToSalesforce.createNew(loginToExpenseApp.getKeeperId());
-                        if (SUCCESS.equals(result)){
+                        if (SUCCESS.equals(result)) {
+                            calloutsToSalesforce.closeNewCardProcess();
                             sendMsg("Карточка успешно создана", getBaseCommands());
                         } else {
                             sendMsg("Произошла ошибка на сервере. Можете попытаться ещё раз",
@@ -208,52 +233,100 @@ public class ChatUpdateHandler {
         }
     }
 
-    private void calendarHandler(){
+    private void calendarHandler() {
         if (checkActive()) {
             // bot is active (command /start was executed)
             if (checkAuth()) {
                 // user is logged
                 if (checkNewCardProcess()) {
                     // user is in process of creating new expense card
-                    if (checkIfDateSetStage()){
+                    if (checkIfDateSetStage()) {
                         // user is setting date now
-
+                        sendMsg("Выберите дату: ", calendar(monthToRenderCalendar));
                     }
                 }
             }
         }
     }
 
-    private void todayHandler(){
+    private void todayHandler() {
         if (checkActive()) {
             // bot is active (command /start was executed)
             if (checkAuth()) {
                 // user is logged
                 if (checkNewCardProcess()) {
                     // user is in process of creating new expense card
-                    if (checkIfDateSetStage()){
+                    if (checkIfDateSetStage()) {
                         // user is setting date now
-                        calloutsToSalesforce.setCardDate(LocalDate.now());
-                        calloutsToSalesforce.setNewCardStage(null);
-                        if (calloutsToSalesforce.isCardRedyToSave()){
-                            sendMsg("Дата задана сегдняшним днём. Сохранить карточку?", getCommandsToCreateNewCard());
-                        } else {
-                            sendMsg("Дата задана сегдняшним днём.", getCommandsToFillNewCard());
-                        }
+                        setCardDateHandler(LocalDate.now());
                     }
                 }
             }
         }
     }
 
-    private void textHandler() {
-        String text = message.getText();
+    private void prevMonthHandler(Integer messageId) {
+        if (checkActive()) {
+            // bot is active (command /start was executed)
+            if (checkAuth()) {
+                // user is logged
+                if (checkNewCardProcess()) {
+                    // user is in process of creating new expense card
+                    if (checkIfDateSetStage()) {
+                        // user is setting date now
+                        monthToRenderCalendar = monthToRenderCalendar.minusMonths(1);
+                        updateMsg(messageId, calendar(monthToRenderCalendar));
+                    }
+                }
+            }
+        }
+    }
+
+    private void nextMonthHandler(Integer messageId) {
+        if (checkActive()) {
+            // bot is active (command /start was executed)
+            if (checkAuth()) {
+                // user is logged
+                if (checkNewCardProcess()) {
+                    // user is in process of creating new expense card
+                    if (checkIfDateSetStage()) {
+                        // user is setting date now
+                        monthToRenderCalendar = monthToRenderCalendar.plusMonths(1);
+                        updateMsg(messageId, calendar(monthToRenderCalendar));
+                    }
+                }
+            }
+        }
+    }
+
+    private void textHandler(String text) {
         System.out.println(text);
         if (checkActive()) {
             if (loginToExpenseApp.isInProcess()) {
                 handleLogin(text);
             } else {
-                // TODO Я не болтаю попусту, я выполняю команды и снова кнопки
+                if (calloutsToSalesforce.isNewCardProcessGoIn()) {
+                    switch (calloutsToSalesforce.getNewCardStage()) {
+                        case DATE:
+                            try {
+                                LocalDate cardDate = LocalDate.parse(text);
+                                setCardDateHandler(cardDate);
+                            } catch (DateTimeParseException ex) {
+                                ex.printStackTrace();
+                                sendMsg("Дата не может быть сохранена. Возможно вы ошиблись при вводе.\nДата должна быть в формате YYYY-MM-DD.\nВведите дату в нужном формате или воспользуйтесь календарём",
+                                        calendar(monthToRenderCalendar));
+                            }
+                            break;
+                        case AMOUNT:
+                            setAmountHandler(text);
+                            break;
+                        case DESCRIPTION:
+                            setDescriptionHandler(text);
+                            break;
+                    }
+                } else {
+                    sendMsg("Я не болтаю попусту, я выполняю команды!!!", InlineKeyboardFactory.getBaseCommands());
+                }
             }
         }
     }
@@ -287,14 +360,67 @@ public class ChatUpdateHandler {
         }
     }
 
+    // TODO: check if 2 years ago <= data <= next year
+    private void setCardDateHandler(LocalDate cardDate) {
+        // set card date
+        calloutsToSalesforce.setCardDate(cardDate);
+        // set stage to null
+        calloutsToSalesforce.setNewCardStage(null);
+        // set default month to render calendar
+        monthToRenderCalendar = LocalDate.now();
+        checkIfReadyToSave();
+    }
+
+    private void setAmountHandler(String amountText) {
+        try {
+            Double.valueOf(amountText);
+            // set card amount
+            calloutsToSalesforce.setAmount(amountText);
+            // set stage to null
+            calloutsToSalesforce.setNewCardStage(null);
+            checkIfReadyToSave();
+        } catch (NumberFormatException ex) {
+            ex.printStackTrace();
+            sendMsg("Введенный текст не является числом. Вы ввели: " + amountText +
+                    ". Введите корректное число или нажмите отмена", getCancel());
+        }
+    }
+
+    private void setDescriptionHandler(String descriptionText) {
+        // set description
+        calloutsToSalesforce.setDescription(descriptionText);
+        // set stage to null
+        calloutsToSalesforce.setNewCardStage(null);
+        checkIfReadyToSave();
+    }
+
+    private void checkIfReadyToSave() {
+        String amount = calloutsToSalesforce.getAmount() == null ? "ещё не задана" : calloutsToSalesforce.getAmount();
+        String cardDate = calloutsToSalesforce.getCardDate() == null ? "ещё не задана" :
+                calloutsToSalesforce.getCardDate().format(DateTimeFormatter.
+                        ofLocalizedDate(FormatStyle.LONG).
+                        withLocale(BotConfig.defaultLocale));
+        String description = calloutsToSalesforce.getDescription() == null ? "ещё не задано" :
+                calloutsToSalesforce.getDescription();
+        String message = "Дата для картлчки: " + cardDate +
+                "\nСтоимомсть товара: " + amount +
+                "\nОписание товара: " + description;
+        if (calloutsToSalesforce.isCardReadyToSave()) {
+            // card ready to save (all required fields are full)
+            sendMsg(message + "\n Сохранить карточку?", getCommandsToCreateNewCard());
+        } else {
+            // there are some null fields
+            sendMsg(message, getCommandsToFillNewCard());
+        }
+    }
 
     /**
      * Метод для настройки сообщения и его отправки.
      *
-     * @param s      Строка, которую необходимот отправить в качестве сообщения.
+     * @param textMsg Строка, которую необходимот отправить в качестве сообщения.
      */
-    private synchronized void sendMsg(String s) {
-        SendMessage sendMessage = configTextMessage(s);
+    private void sendMsg(String textMsg) {
+        SendMessage sendMessage = configTextMessage(textMsg);
         try {
             bot.execute(sendMessage);
         } catch (TelegramApiException e) {
@@ -308,7 +434,7 @@ public class ChatUpdateHandler {
      * @param s              Строка, которую необходимот отправить в качестве сообщения.
      * @param keyboardMarkup inline keyboard of commands
      */
-    private synchronized void sendMsg(String s, ReplyKeyboard keyboardMarkup) {
+    private void sendMsg(String s, ReplyKeyboard keyboardMarkup) {
         SendMessage sendMessage = configTextMessage(s);
         sendMessage.setReplyMarkup(keyboardMarkup);
         try {
@@ -318,10 +444,21 @@ public class ChatUpdateHandler {
         }
     }
 
+    private void updateMsg(Integer messageId, InlineKeyboardMarkup keyboardMarkup) {
+        EditMessageReplyMarkup editedMsg = new EditMessageReplyMarkup().
+                setChatId(chatId).
+                setMessageId(messageId).setReplyMarkup(keyboardMarkup);
+        try {
+            bot.execute(editedMsg);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
     private SendMessage configTextMessage(String s) {
         SendMessage sendMessage = new SendMessage();
         sendMessage.enableMarkdown(true);
-        sendMessage.setChatId(message.getChatId());
+        sendMessage.setChatId(chatId);
         sendMessage.setText(s);
         return sendMessage;
     }
@@ -370,7 +507,7 @@ public class ChatUpdateHandler {
     }
 
     private boolean checkIfDateSetStage() {
-        if (calloutsToSalesforce.getNewCardStage() == NewCardStage.DATE){
+        if (calloutsToSalesforce.getNewCardStage() == NewCardStage.DATE) {
             return true;
         } else {
             sendMsg("Эта команда в данный млмент не доступна", getCommandsToFillNewCard());
@@ -379,9 +516,9 @@ public class ChatUpdateHandler {
     }
 
     private boolean checkData(String amount, String description, LocalDate cardDate) {
-        if (amount != null){
-            if (description != null){
-                if (cardDate != null){
+        if (amount != null) {
+            if (description != null) {
+                if (cardDate != null) {
                     return true;
                 } else {
                     sendMsg("Дата не заполнена. Все поля должны быть заполнены!!!",

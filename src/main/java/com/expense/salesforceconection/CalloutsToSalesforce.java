@@ -19,7 +19,7 @@ public class CalloutsToSalesforce {
     private LocalDate cardDate;
     private NewCardStage newCardStage = null;
 
-    public boolean isCardRedyToSave() {
+    public boolean isCardReadyToSave() {
         return amount != null && description != null && cardDate != null;
     }
 
@@ -71,6 +71,13 @@ public class CalloutsToSalesforce {
 
     public void setNewCardStage(NewCardStage newCardStage) {
         this.newCardStage = newCardStage;
+    }
+
+    public void closeNewCardProcess(){
+        amount = null;
+        description = null;
+        cardDate = null;
+        isNewCardProcessGoIn = false;
     }
 
     public String getBalance(String keeperId) {

@@ -1,5 +1,6 @@
 package com.expense.inlinekeyboard;
 
+import com.expense.BotConfig;
 import com.expense.updareshandlers.Commands;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -7,6 +8,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import java.time.LocalDate;
 import java.time.format.TextStyle;
 import java.util.*;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 public class InlineKeyboardFactory {
 
@@ -85,6 +88,8 @@ public class InlineKeyboardFactory {
         );
     }
 
+
+
     public static InlineKeyboardMarkup getStart() {
         return start;
     }
@@ -123,16 +128,28 @@ public class InlineKeyboardFactory {
         // set first line monthName and Year
         keyboard.add(Collections.singletonList(
                 new InlineKeyboardButton().
-                        setText(date.getMonth().getDisplayName(TextStyle.FULL, new Locale("rus","RU"))
+                        setText(date.getMonth().getDisplayName(TextStyle.FULL, BotConfig.defaultLocale)
                                 + " " + date.getYear()).
                         setCallbackData(Commands.DO_NOTHING)
                 )
         );
         // set days of week
         keyboard.add(daysOfWeekLine);
+        //Calendar
+        final int year = date.getYear();
+        final int month = date.getMonth().getValue();
+        List<String[]> monthDates = Calendar.generateMonthTable(year, month);
+        monthDates.forEach(week ->
+            keyboard.add(
+            Arrays.stream(week).map(s ->
+                    new InlineKeyboardButton().
+                            setText(s).
+                            setCallbackData(String.format("%1$s-%2$s-%3$s", year, month, s))).
+                    collect(Collectors.toList())
+            )
+        );
         // set navigation Buttons
         keyboard.add(navigationButtons);
-        //Calendar
         markup.setKeyboard(keyboard);
         return markup;
     }
