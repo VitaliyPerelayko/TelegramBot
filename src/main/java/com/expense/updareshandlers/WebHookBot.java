@@ -8,14 +8,10 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 
 public class WebHookBot extends TelegramWebhookBot {
 
+    private UpdateHandler updateHandler = new UpdateHandler();
+
     public BotApiMethod onWebhookUpdateReceived(Update update) {
-        if (update.hasMessage() && update.getMessage().hasText()) {
-            SendMessage sendMessage = new SendMessage();
-            sendMessage.setChatId(update.getMessage().getChatId().toString());
-            sendMessage.setText(update.getMessage().getText());
-            return sendMessage;
-        }
-        return null;
+        return updateHandler.handleUpdate(update);
     }
 
     public String getBotUsername() {

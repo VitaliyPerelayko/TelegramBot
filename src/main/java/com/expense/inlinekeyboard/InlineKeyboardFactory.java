@@ -8,7 +8,6 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import java.time.LocalDate;
 import java.time.format.TextStyle;
 import java.util.*;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 public class InlineKeyboardFactory {
@@ -43,7 +42,7 @@ public class InlineKeyboardFactory {
         baseCommandsMap.put("Текущий баланс", Commands.BALANCE);
         baseCommandsMap.put("Создать карточку", Commands.NEW_EXPENSE_CARD);
         baseCommandsMap.put("Выйти из учетгой записи", Commands.STOP);
-        baseCommands = keyboardLine(baseCommandsMap);
+        baseCommands = keyboardColumn(baseCommandsMap);
         // commands after success balance getting
         Map<String, String> afterBalanceCommandsMap = new LinkedHashMap<>();
         afterBalanceCommandsMap.put("Создать карточку", Commands.NEW_EXPENSE_CARD);
@@ -83,11 +82,10 @@ public class InlineKeyboardFactory {
         );
         // set navigation button
         navigationButtons = Arrays.asList(
-                new InlineKeyboardButton().setText("Предидущий \n месяц").setCallbackData(Commands.PREV_MONTH),
+                new InlineKeyboardButton().setText("Предыущий \n месяц").setCallbackData(Commands.PREV_MONTH),
                 new InlineKeyboardButton().setText("Следующий \n месяц").setCallbackData(Commands.NEXT_MONTH)
         );
     }
-
 
 
     public static InlineKeyboardMarkup getStart() {
@@ -137,16 +135,17 @@ public class InlineKeyboardFactory {
         keyboard.add(daysOfWeekLine);
         //Calendar
         final int year = date.getYear();
-        final int month = date.getMonth().getValue();
+        final int month = date.getMonthValue();
+        final String monthText = month / 10 == 0 ? "0" + month : String.valueOf(month);
         List<String[]> monthDates = Calendar.generateMonthTable(year, month);
         monthDates.forEach(week ->
-            keyboard.add(
-            Arrays.stream(week).map(s ->
-                    new InlineKeyboardButton().
-                            setText(s).
-                            setCallbackData(String.format("%1$s-%2$s-%3$s", year, month, s))).
-                    collect(Collectors.toList())
-            )
+                keyboard.add(
+                        Arrays.stream(week).map(s ->
+                                new InlineKeyboardButton().
+                                        setText(s).
+                                        setCallbackData(String.format("%1$s-%2$s-%3$s", year, month, s))).
+                                collect(Collectors.toList())
+                )
         );
         // set navigation Buttons
         keyboard.add(navigationButtons);

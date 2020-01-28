@@ -1,9 +1,11 @@
 package com.expense.inlinekeyboard;
 
+import com.expense.BotConfig;
+
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.util.*;
 
 public class Calendar {
     // days[i] = number of days in month i
@@ -57,9 +59,11 @@ public class Calendar {
     }
 
     public static void main(String[] args) {
-        System.out.println(LocalDate.of(2019, 11, 1).getDayOfWeek());
-        generateMonthTable(2019, 8).forEach(strings ->
-                System.out.println(Arrays.toString(strings))
-        );
+        String s;
+        if ((s = null) != null){
+            System.out.println(s);
+        } else {
+            System.out.println(s);
+        }
     }
 }

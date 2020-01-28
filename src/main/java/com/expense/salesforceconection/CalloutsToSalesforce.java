@@ -12,6 +12,8 @@ import static com.expense.salesforceconection.RequestSenderUtil.sendPostRequest;
 
 public class CalloutsToSalesforce {
 
+    public static final String ERROR = "\"ERROR\"";
+
     private RequestParameters requestParameters;
     private boolean isNewCardProcessGoIn = false;
     private String amount;
@@ -73,7 +75,7 @@ public class CalloutsToSalesforce {
         this.newCardStage = newCardStage;
     }
 
-    public void closeNewCardProcess(){
+    public void closeNewCardProcess() {
         amount = null;
         description = null;
         cardDate = null;
@@ -81,17 +83,27 @@ public class CalloutsToSalesforce {
     }
 
     public String getBalance(String keeperId) {
-        String url = requestParameters.getUrl() + BuildVars.REST_URL + "/balance";
-        HttpEntity body = new StringEntity(SerializationToJSON.serializeOneParam(keeperId),
-                ContentType.APPLICATION_JSON);
-        return sendPostRequest(url, body, requestParameters.getAccessToken());
+        try {
+            String url = requestParameters.getUrl() + BuildVars.REST_URL + "/balance";
+            HttpEntity body = new StringEntity(SerializationToJSON.serializeOneParam(keeperId),
+                    ContentType.APPLICATION_JSON);
+            return sendPostRequest(url, body, requestParameters.getAccessToken());
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ERROR;
+        }
     }
 
     public String createNew(String keeperId) {
-        String url = requestParameters.getUrl() + BuildVars.REST_URL + "/card";
-        HttpEntity body = new StringEntity(
-                SerializationToJSON.serializeNewExpenseData(keeperId, cardDate, amount, description),
-                ContentType.APPLICATION_JSON);
-        return sendPostRequest(url, body, requestParameters.getAccessToken());
+        try {
+            String url = requestParameters.getUrl() + BuildVars.REST_URL + "/card";
+            HttpEntity body = new StringEntity(
+                    SerializationToJSON.serializeNewExpenseData(keeperId, cardDate, amount, description),
+                    ContentType.APPLICATION_JSON);
+            return sendPostRequest(url, body, requestParameters.getAccessToken());
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ERROR;
+        }
     }
 }

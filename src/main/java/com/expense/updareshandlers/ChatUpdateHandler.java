@@ -3,11 +3,11 @@ package com.expense.updareshandlers;
 import com.expense.BotConfig;
 import com.expense.inlinekeyboard.InlineKeyboardFactory;
 import com.expense.salesforceconection.*;
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -22,316 +22,270 @@ public class ChatUpdateHandler {
 
     private LoginToExpenseApp loginToExpenseApp;
     private CalloutsToSalesforce calloutsToSalesforce;
-    private LongPollingBot bot;
     private Long chatId;
     private boolean isActive = false;
     private LocalDate monthToRenderCalendar;
 
-    public ChatUpdateHandler(LongPollingBot bot, Long chatId) {
-        this.bot = bot;
+    public ChatUpdateHandler(Long chatId) {
         this.chatId = chatId;
         this.monthToRenderCalendar = LocalDate.now();
     }
 
-    public void commandHandler(String text, Integer messageId) {
+    public BotApiMethod commandHandler(String text, Integer messageId) {
         switch (text) {
             case Commands.START:
-                startHandler();
-                break;
+                return startHandler();
             case Commands.STOP:
-                stopHandler();
-                break;
+                return stopHandler();
             case Commands.CANCEL:
-                cancelHandler();
-                break;
+                return cancelHandler();
             case Commands.BALANCE:
-                balanceHandler();
-                break;
+                return balanceHandler();
             case Commands.NEW_EXPENSE_CARD:
-                newCardHandler();
-                break;
+                return newCardHandler();
             case Commands.SET_AMOUNT:
-                setAmountHandler();
-                break;
+                return setAmountHandler();
             case Commands.SET_DATE:
-                setDateHandler();
-                break;
+                return setDateHandler();
             case Commands.SET_DESCRIPTION:
-                setDescriptionHandler();
-                break;
+                return setDescriptionHandler();
             case Commands.CREATE_CARD:
-                createCardHandler();
-                break;
+                return createCardHandler();
             case Commands.CALENDAR:
-                calendarHandler();
-                break;
+                return calendarHandler();
             case Commands.TODAY:
-                todayHandler();
-                break;
+                return todayHandler();
             case Commands.PREV_MONTH:
-                prevMonthHandler(messageId);
-                break;
+                return prevMonthHandler(messageId);
             case Commands.NEXT_MONTH:
-                nextMonthHandler(messageId);
-                break;
+                return nextMonthHandler(messageId);
             case Commands.DO_NOTHING:
-                break;
+                System.out.println("==================== ERROR WHEN DO NOTHING ====================");
+                return null;
 //            case Commands.HELP:
 //                helpHandler();
 //                break;
             default:
-                textHandler(text);
-                break;
+                return textHandler(text);
         }
     }
 
-    private void startHandler() {
+    private BotApiMethod startHandler() {
         RequestParameters requestParameters = Login.getToken();
         loginToExpenseApp = new LoginToExpenseApp(requestParameters);
         calloutsToSalesforce = new CalloutsToSalesforce(requestParameters);
         isActive = true;
-        sendMsg("ВВедите логин:");
+        return sendMsg("Введите логин:");
     }
 
-    private void stopHandler() {
+    private BotApiMethod stopHandler() {
         isActive = false;
+        return sendMsg("Вы вышли из учётной записи");
     }
 
-    private void cancelHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()){
-                    // user is in process of creating new expense card
-                    if (calloutsToSalesforce.getNewCardStage() == null){
-                        calloutsToSalesforce.closeNewCardProcess();
-                        sendMsg("Что хотіте сделать?", getBaseCommands());
-                    } else {
-                        calloutsToSalesforce.setNewCardStage(null);
-                        checkIfReadyToSave();
-                    }
+    private BotApiMethod cancelHandler() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            // user is in process of creating new expense card
+            if (calloutsToSalesforce.getNewCardStage() == null) {
+                calloutsToSalesforce.closeNewCardProcess();
+                return sendMsg("Что хотите сделать?", getBaseCommands());
+            } else {
+                calloutsToSalesforce.setNewCardStage(null);
+                return checkIfReadyToSave();
+            }
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod balanceHandler() {
+        BotApiMethod method;
+        if ((method = checkAuth()) == null) {
+            // user is logged
+            final String result = calloutsToSalesforce.getBalance(loginToExpenseApp.getKeeperId());
+            switch (result) {
+                case CalloutsToSalesforce.ERROR:
+                    sendMsg("Произоша ошибка на сервере, попытайтесь ещё раз", getBaseCommands());
+                case "\"NO_DATA\"":
+                    return sendMsg("В текщем месяце ещё не было пополнения баланся или расходов. Создайте сначала карточку",
+                            getCommandsAfterBalance());
+                default:
+                    String balance = result.substring(1, result.length() - 1);
+                    return sendMsg("Баланс за теущий месяц: " + balance + "$", getCommandsAfterBalance());
+            }
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod newCardHandler() {
+        BotApiMethod method;
+        if ((method = checkAuth()) == null) {
+            // user is logged
+            calloutsToSalesforce.setNewCardProcessGoIn(true);
+            return sendMsg("Заполните данные", getCommandsToFillNewCard());
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod setAmountHandler() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            // user is in process of creating new expense card
+            calloutsToSalesforce.setNewCardStage(NewCardStage.AMOUNT);
+            String amount = calloutsToSalesforce.getAmount();
+            if (amount != null) {
+                return sendMsg("Желаете изменить стоимость? Предыдущее значение: " + amount +
+                        ". Введите новую цену или нажмите Отмена", getCancel());
+            } else {
+                return sendMsg("Введите стомость", getCancel());
+            }
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod setDateHandler() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            // user is in process of creating new expense card
+            calloutsToSalesforce.setNewCardStage(NewCardStage.DATE);
+            LocalDate cardDate = calloutsToSalesforce.getCardDate();
+            if (cardDate != null) {
+                return sendMsg("Желаете изменить дату? Предыдущее значение: " + cardDate.toString()
+                                + ". Выберите новую дату или нажмите Отмена",
+                        getWaysToSetDate());
+            } else {
+                return sendMsg("На какой день желаете создать карточку?", getWaysToSetDate());
+            }
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod setDescriptionHandler() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            // user is in process of creating new expense card
+            calloutsToSalesforce.setNewCardStage(NewCardStage.DESCRIPTION);
+            String description = calloutsToSalesforce.getDescription();
+            if (description != null) {
+                return sendMsg("Желаете изменить описание? Предыдущее описание: " + description
+                                + ". Введите новое или нажмите Отмена",
+                        getCancel());
+            } else {
+                return sendMsg("Введите описание товара", getCancel());
+            }
+        } else {
+            return method;
+        }
+    }
+
+    private BotApiMethod createCardHandler() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            // user is in process of creating new expense card
+            String description = calloutsToSalesforce.getDescription();
+            String amount = calloutsToSalesforce.getAmount();
+            LocalDate cardDate = calloutsToSalesforce.getCardDate();
+            if ((method = checkData(amount, description, cardDate)) == null) {
+                String result = calloutsToSalesforce.createNew(loginToExpenseApp.getKeeperId());
+                if (SUCCESS.equals(result)) {
+                    calloutsToSalesforce.closeNewCardProcess();
+                    return sendMsg("Карточка успешно создана", getBaseCommands());
+                } else {
+                    return sendMsg("Произошла ошибка на сервере. Можете попытаться ещё раз",
+                            getCommandsToCreateNewCard());
                 }
+            } else {
+                return method;
             }
+        } else {
+            return method;
         }
     }
 
-    private void balanceHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                final String result = calloutsToSalesforce.getBalance(loginToExpenseApp.getKeeperId());
-                switch (result) {
-                    case "\"ERROR\"":
-                        sendMsg("Произоша ошибка на сервере, попытайтесь ещё раз", getBaseCommands());
-                    case "\"NO_DATA\"":
-                        sendMsg("В текщем месяце ещё не было пополнения баланся или расходов. Создайте сначала карточку",
-                                getCommandsAfterBalance());
-                    default:
-                        sendMsg("Баланс за теущий месяц: " + result, getCommandsAfterBalance());
-                }
-            }
+    private BotApiMethod calendarHandler() {
+        BotApiMethod method;
+        if ((method = checkIfDateSetStage()) == null) {
+            // user is setting date now
+            return sendMsg("Выберите дату: ", calendar(monthToRenderCalendar));
+        } else {
+            return method;
         }
     }
 
-    private void newCardHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                calloutsToSalesforce.setNewCardProcessGoIn(true);
-                sendMsg("Заполните данные", getCommandsToFillNewCard());
-            }
+    private BotApiMethod todayHandler() {
+        BotApiMethod method;
+        if ((method = checkIfDateSetStage()) == null) {
+            // user is setting date now
+            setCardDateHandler(LocalDate.now());
+            return checkIfReadyToSave();
+        } else {
+            return method;
         }
     }
 
-    private void setAmountHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    calloutsToSalesforce.setNewCardStage(NewCardStage.AMOUNT);
-                    String amount = calloutsToSalesforce.getAmount();
-                    if (amount != null) {
-                        sendMsg("Желаете изменить стоимость? Предыдущее значение: " + amount +
-                                ". Введите новую цену или нажмите Отмена", getCancel());
-                    } else {
-                        sendMsg("Введите стомость", getCancel());
-                    }
-                }
-            }
+    private BotApiMethod prevMonthHandler(Integer messageId) {
+        BotApiMethod method;
+        if ((method = checkIfDateSetStage()) == null) {
+            // user is setting date now
+            monthToRenderCalendar = monthToRenderCalendar.minusMonths(1);
+            return updateMsg(messageId, calendar(monthToRenderCalendar));
+        } else {
+            return method;
         }
     }
 
-    private void setDateHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    calloutsToSalesforce.setNewCardStage(NewCardStage.DATE);
-                    LocalDate cardDate = calloutsToSalesforce.getCardDate();
-                    if (cardDate != null) {
-                        sendMsg("Желаете изменить дату? Предыдущее значение: " + cardDate.toString()
-                                        + ". Выберите новую дату или нажмите Отмена",
-                                getWaysToSetDate());
-                    } else {
-                        sendMsg("На какой день желаете создать карточку?", getWaysToSetDate());
-                    }
-                }
-            }
+    private BotApiMethod nextMonthHandler(Integer messageId) {
+        BotApiMethod method;
+        if ((method = checkIfDateSetStage()) == null) {
+            // user is setting date now
+            monthToRenderCalendar = monthToRenderCalendar.plusMonths(1);
+            return updateMsg(messageId, calendar(monthToRenderCalendar));
+        } else {
+            return method;
         }
     }
 
-    private void setDescriptionHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    calloutsToSalesforce.setNewCardStage(NewCardStage.DESCRIPTION);
-                    String description = calloutsToSalesforce.getDescription();
-                    if (description != null) {
-                        sendMsg("Желаете изменить описание? Предыдущее описание: " + description
-                                        + ". Введите новое или нажмите Отмена",
-                                getCancel());
-                    } else {
-                        sendMsg("Введите описание товара", getCancel());
-                    }
-                }
-            }
-        }
-    }
-
-    private void createCardHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    String description = calloutsToSalesforce.getDescription();
-                    String amount = calloutsToSalesforce.getAmount();
-                    LocalDate cardDate = calloutsToSalesforce.getCardDate();
-                    if (checkData(amount, description, cardDate)) {
-                        String result = calloutsToSalesforce.createNew(loginToExpenseApp.getKeeperId());
-                        if (SUCCESS.equals(result)) {
-                            calloutsToSalesforce.closeNewCardProcess();
-                            sendMsg("Карточка успешно создана", getBaseCommands());
-                        } else {
-                            sendMsg("Произошла ошибка на сервере. Можете попытаться ещё раз",
-                                    getCommandsToCreateNewCard());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private void calendarHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    if (checkIfDateSetStage()) {
-                        // user is setting date now
-                        sendMsg("Выберите дату: ", calendar(monthToRenderCalendar));
-                    }
-                }
-            }
-        }
-    }
-
-    private void todayHandler() {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    if (checkIfDateSetStage()) {
-                        // user is setting date now
-                        setCardDateHandler(LocalDate.now());
-                    }
-                }
-            }
-        }
-    }
-
-    private void prevMonthHandler(Integer messageId) {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    if (checkIfDateSetStage()) {
-                        // user is setting date now
-                        monthToRenderCalendar = monthToRenderCalendar.minusMonths(1);
-                        updateMsg(messageId, calendar(monthToRenderCalendar));
-                    }
-                }
-            }
-        }
-    }
-
-    private void nextMonthHandler(Integer messageId) {
-        if (checkActive()) {
-            // bot is active (command /start was executed)
-            if (checkAuth()) {
-                // user is logged
-                if (checkNewCardProcess()) {
-                    // user is in process of creating new expense card
-                    if (checkIfDateSetStage()) {
-                        // user is setting date now
-                        monthToRenderCalendar = monthToRenderCalendar.plusMonths(1);
-                        updateMsg(messageId, calendar(monthToRenderCalendar));
-                    }
-                }
-            }
-        }
-    }
-
-    private void textHandler(String text) {
+    private BotApiMethod textHandler(String text) {
         System.out.println(text);
-        if (checkActive()) {
+        BotApiMethod method;
+        if ((method = checkActive()) == null) {
             if (loginToExpenseApp.isInProcess()) {
-                handleLogin(text);
+                return handleLogin(text);
             } else {
                 if (calloutsToSalesforce.isNewCardProcessGoIn()) {
                     switch (calloutsToSalesforce.getNewCardStage()) {
                         case DATE:
                             try {
                                 LocalDate cardDate = LocalDate.parse(text);
-                                setCardDateHandler(cardDate);
+                                return setCardDateHandler(cardDate);
                             } catch (DateTimeParseException ex) {
                                 ex.printStackTrace();
-                                sendMsg("Дата не может быть сохранена. Возможно вы ошиблись при вводе.\nДата должна быть в формате YYYY-MM-DD.\nВведите дату в нужном формате или воспользуйтесь календарём",
+                                return sendMsg("Дата не может быть сохранена. Возможно вы ошиблись при вводе.\nДата должна быть в формате YYYY-MM-DD.\nВведите дату в нужном формате или воспользуйтесь календарём",
                                         calendar(monthToRenderCalendar));
                             }
-                            break;
                         case AMOUNT:
-                            setAmountHandler(text);
-                            break;
+                            return setAmountHandler(text);
                         case DESCRIPTION:
-                            setDescriptionHandler(text);
-                            break;
+                            return setDescriptionHandler(text);
+                        //unreachable state
+                        default:
+                            return null;
                     }
                 } else {
-                    sendMsg("Я не болтаю попусту, я выполняю команды!!!", InlineKeyboardFactory.getBaseCommands());
+                    return sendMsg("Я не болтаю попусту, я выполняю команды!!!", InlineKeyboardFactory.getBaseCommands());
                 }
             }
+        } else {
+            return method;
         }
     }
 
-    private void handleLogin(String text) {
+    private BotApiMethod handleLogin(String text) {
         final LoginStage stageOfLogin = loginToExpenseApp.getStage();
         if (stageOfLogin == LoginStage.USERNAME) {
             if (validateUsername(text)) {
@@ -339,13 +293,13 @@ public class ChatUpdateHandler {
                 if (SUCCESS.equals(result)) {
                     loginToExpenseApp.setValidUsername(text);
                     loginToExpenseApp.setStage(LoginStage.PASSWORD);
-                    sendMsg("Введите пароль:");
+                    return sendMsg("Введите пароль:");
                 } else {
-                    sendMsg("В системе нет такого юзера. Попробуйте другой логин или введите команду /stop",
+                    return sendMsg("В системе нет такого юзера. Попробуйте другой логин или введите команду /stop",
                             getStop());
                 }
             } else {
-                sendMsg("Форат логина неверный. Логин должен быть в формате email.\n Попробуйте другой логин или введите команду /stop",
+                return sendMsg("Форат логина неверный. Логин должен быть в формате email.\n Попробуйте другой логин или введите команду /stop",
                         getStop());
             }
         } else if (stageOfLogin == LoginStage.PASSWORD) {
@@ -353,48 +307,49 @@ public class ChatUpdateHandler {
             if (result.startsWith("\"TOKEN")) {
                 loginToExpenseApp.setInProcess(false);
                 parseAccessToken(result);
-                sendMsg("Авторизация прошла успешно", getBaseCommands());
+                return sendMsg("Авторизация прошла успешно", getBaseCommands());
             } else {
-                sendMsg("Пароль не подходит. Попробуйте ещё раз или введите команду /stop", getStop());
+                return sendMsg("Пароль не подходит. Попробуйте ещё раз или введите команду /stop", getStop());
             }
+        } else {
+            return sendMsg("Ошибка авторизации. Нажмите опять Старт", getStart());
         }
     }
 
-    // TODO: check if 2 years ago <= data <= next year
-    private void setCardDateHandler(LocalDate cardDate) {
+    private BotApiMethod setCardDateHandler(LocalDate cardDate) {
         // set card date
         calloutsToSalesforce.setCardDate(cardDate);
         // set stage to null
         calloutsToSalesforce.setNewCardStage(null);
         // set default month to render calendar
         monthToRenderCalendar = LocalDate.now();
-        checkIfReadyToSave();
+        return checkIfReadyToSave();
     }
 
-    private void setAmountHandler(String amountText) {
+    private BotApiMethod setAmountHandler(String amountText) {
         try {
             Double.valueOf(amountText);
             // set card amount
             calloutsToSalesforce.setAmount(amountText);
             // set stage to null
             calloutsToSalesforce.setNewCardStage(null);
-            checkIfReadyToSave();
+            return checkIfReadyToSave();
         } catch (NumberFormatException ex) {
             ex.printStackTrace();
-            sendMsg("Введенный текст не является числом. Вы ввели: " + amountText +
+            return sendMsg("Введенный текст не является числом. Вы ввели: " + amountText +
                     ". Введите корректное число или нажмите отмена", getCancel());
         }
     }
 
-    private void setDescriptionHandler(String descriptionText) {
+    private BotApiMethod setDescriptionHandler(String descriptionText) {
         // set description
         calloutsToSalesforce.setDescription(descriptionText);
         // set stage to null
         calloutsToSalesforce.setNewCardStage(null);
-        checkIfReadyToSave();
+        return checkIfReadyToSave();
     }
 
-    private void checkIfReadyToSave() {
+    private BotApiMethod checkIfReadyToSave() {
         String amount = calloutsToSalesforce.getAmount() == null ? "ещё не задана" : calloutsToSalesforce.getAmount();
         String cardDate = calloutsToSalesforce.getCardDate() == null ? "ещё не задана" :
                 calloutsToSalesforce.getCardDate().format(DateTimeFormatter.
@@ -407,10 +362,10 @@ public class ChatUpdateHandler {
                 "\nОписание товара: " + description;
         if (calloutsToSalesforce.isCardReadyToSave()) {
             // card ready to save (all required fields are full)
-            sendMsg(message + "\n Сохранить карточку?", getCommandsToCreateNewCard());
+            return sendMsg(message + "\n Сохранить карточку?", getCommandsToCreateNewCard());
         } else {
             // there are some null fields
-            sendMsg(message, getCommandsToFillNewCard());
+            return sendMsg(message, getCommandsToFillNewCard());
         }
     }
 
@@ -419,13 +374,8 @@ public class ChatUpdateHandler {
      *
      * @param textMsg Строка, которую необходимот отправить в качестве сообщения.
      */
-    private void sendMsg(String textMsg) {
-        SendMessage sendMessage = configTextMessage(textMsg);
-        try {
-            bot.execute(sendMessage);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
+    private BotApiMethod sendMsg(String textMsg) {
+        return configTextMessage(textMsg);
     }
 
     /**
@@ -434,25 +384,16 @@ public class ChatUpdateHandler {
      * @param s              Строка, которую необходимот отправить в качестве сообщения.
      * @param keyboardMarkup inline keyboard of commands
      */
-    private void sendMsg(String s, ReplyKeyboard keyboardMarkup) {
+    private BotApiMethod sendMsg(String s, ReplyKeyboard keyboardMarkup) {
         SendMessage sendMessage = configTextMessage(s);
         sendMessage.setReplyMarkup(keyboardMarkup);
-        try {
-            bot.execute(sendMessage);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
+        return sendMessage;
     }
 
-    private void updateMsg(Integer messageId, InlineKeyboardMarkup keyboardMarkup) {
-        EditMessageReplyMarkup editedMsg = new EditMessageReplyMarkup().
+    private BotApiMethod updateMsg(Integer messageId, InlineKeyboardMarkup keyboardMarkup) {
+        return new EditMessageReplyMarkup().
                 setChatId(chatId).
                 setMessageId(messageId).setReplyMarkup(keyboardMarkup);
-        try {
-            bot.execute(editedMsg);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
     }
 
     private SendMessage configTextMessage(String s) {
@@ -475,65 +416,73 @@ public class ChatUpdateHandler {
         return username.matches(regex);
     }
 
-    private boolean checkActive() {
+    private BotApiMethod checkActive() {
         if (isActive) {
-            return true;
+            return null;
         } else {
             // bot is inactive
-            sendMsg("Вы не авторизированы. Введите команду /start", getStart());
-            return false;
+            return sendMsg("Вы не авторизированы. Введите команду /start", getStart());
         }
     }
 
-    private boolean checkAuth() {
-        if (!loginToExpenseApp.isInProcess()) {
-            // user is logged
-            return true;
+    private BotApiMethod checkAuth() {
+        BotApiMethod method;
+        if ((method = checkActive()) == null) {
+            if (!loginToExpenseApp.isInProcess()) {
+                // user is logged
+                return null;
+            } else {
+                // user is in process of login
+                return sendMsg("Вы ещё не авторизовались!!!\nВведите необходимые данные или команду /stop",
+                        getStop());
+            }
         } else {
-            // user is in process of login
-            sendMsg("Вы ещё не авторизовались!!!\nВведите необходимые данные или команду /stop",
-                    getStop());
-            return false;
+            return method;
         }
     }
 
-    private boolean checkNewCardProcess() {
-        if (calloutsToSalesforce.isNewCardProcessGoIn()) {
-            return true;
+    private BotApiMethod checkNewCardProcess() {
+        BotApiMethod method;
+        if ((method = checkAuth()) == null) {
+            if (calloutsToSalesforce.isNewCardProcessGoIn()) {
+                return null;
+            } else {
+                return sendMsg("Эта команда в данный млмент не доступна", getBaseCommands());
+            }
         } else {
-            sendMsg("Эта команда в данный млмент не доступна", getBaseCommands());
-            return false;
+            return method;
         }
     }
 
-    private boolean checkIfDateSetStage() {
-        if (calloutsToSalesforce.getNewCardStage() == NewCardStage.DATE) {
-            return true;
+    private BotApiMethod checkIfDateSetStage() {
+        BotApiMethod method;
+        if ((method = checkNewCardProcess()) == null) {
+            if (calloutsToSalesforce.getNewCardStage() == NewCardStage.DATE) {
+                return null;
+            } else {
+                return sendMsg("Эта команда в данный млмент не доступна", getCommandsToFillNewCard());
+            }
         } else {
-            sendMsg("Эта команда в данный млмент не доступна", getCommandsToFillNewCard());
-            return false;
+            return method;
         }
     }
 
-    private boolean checkData(String amount, String description, LocalDate cardDate) {
+    private BotApiMethod checkData(String amount, String description, LocalDate cardDate) {
         if (amount != null) {
             if (description != null) {
                 if (cardDate != null) {
-                    return true;
+                    return null;
                 } else {
-                    sendMsg("Дата не заполнена. Все поля должны быть заполнены!!!",
+                    return sendMsg("Дата не заполнена. Все поля должны быть заполнены!!!",
                             getCommandsToFillNewCard());
-                    return false;
                 }
             } else {
-                sendMsg("Описание не заполнено. Все поля должны быть заполнены!!!",
+                return sendMsg("Описание не заполнено. Все поля должны быть заполнены!!!",
                         getCommandsToFillNewCard());
-                return false;
             }
         } else {
-            sendMsg("Цена не указана. Все поля должны быть заполнены!!!",
+            return sendMsg("Цена не указана. Все поля должны быть заполнены!!!",
                     getCommandsToFillNewCard());
-            return false;
         }
     }
 }
