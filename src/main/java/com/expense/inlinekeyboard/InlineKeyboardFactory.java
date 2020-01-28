@@ -143,7 +143,13 @@ public class InlineKeyboardFactory {
                         Arrays.stream(week).map(s ->
                                 new InlineKeyboardButton().
                                         setText(s).
-                                        setCallbackData(String.format("%1$s-%2$s-%3$s", year, monthText, s))).
+                                        setCallbackData(
+                                                " ".equals(s) ?
+                                                        Commands.DO_NOTHING :
+                                                        String.format("%1$s-%2$s-%3$s",
+                                                                year,
+                                                                monthText,
+                                                                s.length() == 1 ? "0" + s : s))).
                                 collect(Collectors.toList())
                 )
         );
