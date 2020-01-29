@@ -13,10 +13,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.FormatStyle;
+import java.util.concurrent.Callable;
 
 import static com.expense.inlinekeyboard.InlineKeyboardFactory.*;
 
-public class ChatUpdateHandler {
+public class ChatUpdateHandler implements Callable<BotApiMethod> {
 
     private static final String SUCCESS = "\"SUCCESS\"";
 
@@ -26,12 +27,25 @@ public class ChatUpdateHandler {
     private boolean isActive = false;
     private LocalDate monthToRenderCalendar;
 
+    private String text;
+    private Integer messageId;
+
     public ChatUpdateHandler(Long chatId) {
         this.chatId = chatId;
         this.monthToRenderCalendar = LocalDate.now();
     }
 
-    public BotApiMethod commandHandler(String text, Integer messageId) {
+    public void setTextAndMessageId(String text, Integer messageId) {
+        this.text = text;
+        this.messageId = messageId;
+    }
+
+    @Override
+    public BotApiMethod call() {
+        return commandHandler();
+    }
+
+    public BotApiMethod commandHandler() {
         switch (text) {
             case Commands.START:
                 return startHandler();
