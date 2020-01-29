@@ -1,10 +1,7 @@
 package com.expense.inlinekeyboard;
 
-import com.expense.BotConfig;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.FormatStyle;
 import java.util.*;
 
 public class Calendar {
@@ -56,14 +53,5 @@ public class Calendar {
             monthTable.add(line);
         }
         return monthTable;
-    }
-
-    public static void main(String[] args) {
-        String s;
-        if ((s = null) != null){
-            System.out.println(s);
-        } else {
-            System.out.println(s);
-        }
     }
 }

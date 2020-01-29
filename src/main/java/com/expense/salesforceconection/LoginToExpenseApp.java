@@ -95,12 +95,4 @@ public class LoginToExpenseApp {
         }
         return CalloutsToSalesforce.ERROR;
     }
-
-    public static void main(String[] args) {
-        RequestParameters rp = Login.getToken();
-        if (rp != null) {
-            LoginToExpenseApp loginToExpenseApp = new LoginToExpenseApp(rp);
-            //loginToExpenseApp.setPassword("ant@ant.com", "123");
-        }
-    }
 }
